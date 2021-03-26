@@ -53,11 +53,13 @@ def predict(inputDf, model):
   preds = preds*effectOfCol
  return preds
 
-def get_effect_of_this_cont_col(inputDf, model, col):
- effectOfCol = model["conts"][col]["m"]*(inputDf[col]-model["conts"][col]["z"])+model["conts"][col]["c"]
+def get_effect_of_this_cont_col(inputDf, model, col, x=None):
+ if x==None:
+  x=inputDf[col]
+ effectOfCol = model["conts"][col]["m"]*(x-model["conts"][col]["z"])+model["conts"][col]["c"]
  if "segs" in model["conts"][col]:
   for seg in model["conts"][col]["segs"]:
-   effectOfCol = effectOfCol+abs(inputDf[col]-seg[0])*seg[1]
+   effectOfCol = effectOfCol+abs(x-seg[0])*seg[1]
  return effectOfCol
 
 def get_effect_of_this_cat_col(inputDf, model, col):
@@ -175,10 +177,10 @@ def construct_model(inputDf, target, nrounds, lr, pena, startingModel, grad=calc
    featurePenaDenominator = math.sqrt(featurePenaDenominator)
    
    model["conts"][col]["c"] = update_using_pena_incl_feature(model["conts"][col]["c"], -(sum(gpoe)*1/inputDf[col].mean())/len(inputDf), 0, abs(model["conts"][col]["c"]-1)*pena["contfeat"], featurePenaDenominator, pena["contfeat"], lr, 1)
-   model["conts"][col]["m"] = update_using_pena_incl_feature(model["conts"][col]["m"], -sum(gpoe*((inputDf[col]-model["conts"][col]["z"])/inputDf[col].std(ddof=0)**2))/len(inputDf), pena["grads"], abs(model["conts"][col]["m"])*pena["contfeat"], featurePenaDenominator, pena["contfeat"],  lr, 0)
+   model["conts"][col]["m"] = update_using_pena_incl_feature(model["conts"][col]["m"], -sum(gpoe*((inputDf[col]-model["conts"][col]["z"])/inputDf[col].std(ddof=0)))/len(inputDf), pena["grads"], abs(model["conts"][col]["m"])*pena["contfeat"], featurePenaDenominator, pena["contfeat"],  lr/inputDf[col].std(ddof=0), 0)
    if "segs" in model["conts"][col]:
     for seg in model["conts"][col]["segs"]:
-     seg[1] = update_using_pena_incl_feature(seg[1], -sum(gpoe*(abs(inputDf[col]-seg[0])/inputDf[col].std(ddof=0)**2))/len(inputDf), pena["segs"], abs(seg[1])*pena["contfeat"], featurePenaDenominator, pena["contfeat"], lr, 0)
+     seg[1] = update_using_pena_incl_feature(seg[1], -sum(gpoe*(abs(inputDf[col]-seg[0])/inputDf[col].std(ddof=0)))/len(inputDf), pena["segs"], abs(seg[1])*pena["contfeat"], featurePenaDenominator, pena["contfeat"], lr/inputDf[col].std(ddof=0), 0)
   
   print str(time.time()-startTime)+"s handling conts"
   startTime=time.time()

@@ -63,8 +63,9 @@ for col in contCols:
  for ratio in ratioList:
   segpt = seg.get_segpt(trainDf, col, ratio)
   roundedSegpt = util.round_to_sf(segpt, 3)
-  if roundedSegpt not in segPointList:
+  if roundedSegpt not in segPointList and (roundedSegpt>min(df[col])) and (roundedSegpt<max(df[col])):
    segPointList.append(roundedSegpt)
+ segPointList.sort()
  segPoints[col]=segPointList
 
 #==Actually model!===
@@ -72,29 +73,20 @@ for col in contCols:
 penas = {"segs":0.0, "grads":0.0, "contfeat":0.0, "catfeat":0.0,"uniques":0.0}
 
 model = actual_modelling.prep_starting_model(trainDf, contCols, segPoints, catCols, uniques, "Total Claim Amount")
-model = actual_modelling.construct_model(trainDf, "Total Claim Amount", 400, 0.05, penas, model)
-
-#penas = {"segs":0.01, "grads":0, "contfeat":0.03, "catfeat":0.03,"uniques":0.03}
-
-#later = {"segs":0.003, "grads":0, "contfeat":0.003, "catfeat":0.003,"uniques":0.003}
-
-#model = actual_modelling.prep_starting_model(trainDf, contCols, segPoints, catCols, uniques, "Total Claim Amount")
-#model = actual_modelling.construct_model(trainDf, "Total Claim Amount", 10, 0.02, penas, model)#quickly winnow out the really useless ones
-#model = actual_modelling.de_feat(model)
-#model = actual_modelling.construct_model(trainDf, "Total Claim Amount", 40, 0.02, penas, model)
-#model = actual_modelling.de_feat(model)
-#model = actual_modelling.construct_model(trainDf, "Total Claim Amount", 50, 0.02, penas, model)
-#model = actual_modelling.de_feat(model)
-#model = actual_modelling.construct_model(trainDf, "Total Claim Amount", 200, 0.05, later, model)
+model = actual_modelling.construct_model(trainDf, "Total Claim Amount", 1000, 0.05, penas, model)
 
 #==Viz Model==
 
-#for col in contCols: #TODO FIX THIS SO IT HANDLES ZEROS NICE LIKE
-# print(col)
-# intervs, prevs = viz.get_cont_pdp_prevalences(trainDf, col)
-# print([util.round_to_sf(x) for x in intervs])
-# print([util.round_to_sf(x) for x in prevs])
+for col in contCols:
+ print(col)
+ #intervs, prevs = viz.get_cont_pdp_prevalences(trainDf, col) #TODO FIX THIS SO IT HANDLES ZEROS NICE LIKE
+ xs, ys = util.convert_lines_to_points(model, trainDf, col)
+ print (xs)
+ print(ys)
 
+for col in catCols:
+ print(col)
+ print(model["cats"][col])
 
 #==Predict==
 
