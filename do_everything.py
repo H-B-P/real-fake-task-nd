@@ -14,11 +14,17 @@ SEGS_PER_CONT=5
 
 df = pd.read_csv("../data/new_train.csv")
 
-uselessCols=["id", "Gender", "Customer", "Effective To Date", "Claim Reason"]
+uselessCols=["id", #that's column order
+"Gender", #modelling on this is illegal
+"Customer", #discriminating against individual customers? no
+"Effective To Date", #we predict the future, it will never be 2011 again, and since I'm guessing we cover the whole year seasonality is also pretty much useless
+"Claim Reason", #we won't know claim reason until after claim is made, and we're trying to sell this
+"State Code", #redundant with State
+"Country"] #everywhere is America
 
 df=df[[c for c in df.columns if c not in uselessCols]]
 
-catCols  = ['Country', 'State Code', 'State', 'Response', 'Coverage', 'Education', 'EmploymentStatus', 'Location Code', 'Marital Status', 'Policy Type', 'Policy', 'Sales Channel', 'Vehicle Class', 'Vehicle Size', "Number of Policies"]
+catCols  = ['State', 'Response', 'Coverage', 'Education', 'EmploymentStatus', 'Location Code', 'Marital Status', 'Policy Type', 'Policy', 'Sales Channel', 'Vehicle Class', 'Vehicle Size', "Number of Policies"]
 contCols = [c for c in df.columns if c not in catCols+["Total Claim Amount"]]
 
 
@@ -72,25 +78,33 @@ for col in contCols:
 
 penas = {"segs":0.0, "grads":0.0, "contfeat":0.0, "catfeat":0.0,"uniques":0.0}
 
-model = actual_modelling.prep_starting_model(trainDf, contCols, segPoints, catCols, uniques, "Total Claim Amount")
-model = actual_modelling.construct_model(trainDf, "Total Claim Amount", 1000, 0.05, penas, model)
+models = [actual_modelling.prep_starting_model(trainDf, contCols, segPoints, catCols, uniques, "Total Claim Amount",0.7), actual_modelling.prep_starting_model(trainDf, contCols, segPoints, catCols, uniques, "Total Claim Amount", 0.2),actual_modelling.prep_starting_model(trainDf, contCols, segPoints, catCols, uniques, "Total Claim Amount", 0.1)]
+models = actual_modelling.construct_model(trainDf, "Total Claim Amount", 1, 0.05, penas, models)
 
 #==Viz Model==
+j=0
 
-for col in contCols:
- print(col)
- #intervs, prevs = viz.get_cont_pdp_prevalences(trainDf, col) #TODO FIX THIS SO IT HANDLES ZEROS NICE LIKE
- xs, ys = util.convert_lines_to_points(model, trainDf, col)
- print (xs)
- print(ys)
-
-for col in catCols:
- print(col)
- print(model["cats"][col])
-
+for model in models:
+ for col in contCols:
+  print(col)
+  intervs, prevs = viz.get_cont_pdp_prevalences(trainDf, col)
+  print (intervs)
+  print (prevs)
+  xs, ys = util.convert_lines_to_points(model, trainDf, col)
+  viz.draw_cont_pdp(xs, ys, 0.2, "model_"+"ABCD"[j]+"_"+col+"_pdp")
+  print(xs)
+  print(ys)
+ 
+ for col in catCols:
+  print(col)
+  print(viz.get_cat_pdp_prevalences(trainDf, col, 0.05))
+  print(model["cats"][col])
+ j+=1
 #==Predict==
 
-testDf["PREDICTED"]=actual_modelling.predict(testDf, model)
+testDf["PREDICTED"]=pd.Series([0]*len(testDf))
+for model in models:
+ testDf["PREDICTED"]+=actual_modelling.predict(testDf, model)
 
 print(testDf[["Total Claim Amount","PREDICTED"]])
 

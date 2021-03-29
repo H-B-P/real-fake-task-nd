@@ -24,7 +24,7 @@ contCols = [c for c in df.columns if c not in catCols+["Total Claim Amount"]]
 
 #==Random Split==
 
-trainDf = df.sample(frac = 0.8, random_state=1) 
+trainDf = df.sample(frac = 0.80, random_state=1) 
 testDf = df.drop(trainDf.index)
 
 trainDf = trainDf.reset_index()
@@ -47,7 +47,7 @@ explanatoryCols = list(trainDf.columns)
 explanatoryCols.remove("Total Claim Amount")
 dtrain = xgb.DMatrix(trainDf[explanatoryCols], label=trainDf["Total Claim Amount"])
 
-params={'max_depth':3, "objective":"reg:gamma"}
+params={'max_depth':2, "objective":"reg:gamma"}
 bst = xgb.train(params, dtrain, 100)
  
 

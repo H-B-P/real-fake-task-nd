@@ -121,8 +121,8 @@ def update_using_pena_incl_feature(amt, push, pena, numerator, denominator, feat
  else:
   return update_using_pena(amt, push, pena+featlim, multiplier, zeroVal, zeroCheck, i)
 
-def prep_starting_model(inputDf, conts, segs, cats, uniques, target):
- model={"BIG_C":inputDf[target].mean(), "conts":{}, "cats":{}}
+def prep_starting_model(inputDf, conts, segs, cats, uniques, target, frac=1):
+ model={"BIG_C":inputDf[target].mean()*frac, "conts":{}, "cats":{}}
  for col in conts:
   model["conts"][col]={}
   model["conts"][col]["c"]=1
@@ -141,67 +141,74 @@ def prep_starting_model(inputDf, conts, segs, cats, uniques, target):
  return model
 
 
-def construct_model(inputDf, target, nrounds, lr, pena, startingModel, grad=calculus.Gamma_grad):
+def construct_model(inputDf, target, nrounds, lr, pena, startingModels, grad=calculus.Gamma_grad):
  
- model = copy.deepcopy(startingModel)
+ models = copy.deepcopy(startingModels)
  
  for i in range(nrounds):
   
   startTime=time.time()
   
   print("epoch: "+str(i)+"/"+str(nrounds))
-  explain(model)
+  for model in models:
+   explain(model)
   
   tic=time.time()
-  preds = predict(inputDf, model)
+  preds=[]
+  overallPreds=pd.Series([0]*len(inputDf))
+  for model in models:
+   pred = predict(inputDf, model)
+   preds.append(pred) 
+   overallPreds += pred
   toc=time.time()
   print(toc-tic)
-  grads = grad(np.array(preds), np.array(inputDf[target]))
+  grads = grad(np.array(overallPreds), np.array(inputDf[target]))
   
   print str(time.time()-startTime)+"s doing init preds"
   startTime=time.time()
   
-  for col in model["conts"]:
-   effectOfCol = get_effect_of_this_cont_col(inputDf, model, col)
-   
-   gpoe = grads*preds/effectOfCol #these terms keep appearing together
-   
-   #You know what never mind this
-   #specZeroValC = model["conts"][col]["c"]+(1-sum(effectOfCol)/len(effectOfCol))# What do we need to add to the current average effect to get the output we want (i.e. 1)?
-   #model["conts"][col]["c"] = update_using_pena(model["conts"][col]["c"], -sum(gpoe)*1*mult, pena["overalls"]*len(inputDf), mult, specZeroValC)
-   #if we end up doing this sort of thing after all update twice in a row
-   
-   featurePenaDenominator = model["conts"][col]["m"]**2 + (model["conts"][col]["c"]-1)**2
-   for seg in model["conts"][col]["segs"]:
-    featurePenaDenominator += seg[1]**2
-   featurePenaDenominator = math.sqrt(featurePenaDenominator)
-   
-   model["conts"][col]["c"] = update_using_pena_incl_feature(model["conts"][col]["c"], -(sum(gpoe)*1/inputDf[col].mean())/len(inputDf), 0, abs(model["conts"][col]["c"]-1)*pena["contfeat"], featurePenaDenominator, pena["contfeat"], lr, 1)
-   model["conts"][col]["m"] = update_using_pena_incl_feature(model["conts"][col]["m"], -sum(gpoe*((inputDf[col]-model["conts"][col]["z"])/inputDf[col].std(ddof=0)))/len(inputDf), pena["grads"], abs(model["conts"][col]["m"])*pena["contfeat"], featurePenaDenominator, pena["contfeat"],  lr/inputDf[col].std(ddof=0), 0)
-   if "segs" in model["conts"][col]:
+  for i in range(len(models)):
+   model=models[i]
+   pred=preds[i]
+  
+   for col in model["conts"]:
+    effectOfCol = get_effect_of_this_cont_col(inputDf, model, col)
+    
+    gpoe = grads*pred/effectOfCol #these terms keep appearing together
+    
+    #Ok yeah this needs outsourcing asap
+    featurePenaDenominator = model["conts"][col]["m"]**2 + (model["conts"][col]["c"]-1)**2
     for seg in model["conts"][col]["segs"]:
-     seg[1] = update_using_pena_incl_feature(seg[1], -sum(gpoe*(abs(inputDf[col]-seg[0])/inputDf[col].std(ddof=0)))/len(inputDf), pena["segs"], abs(seg[1])*pena["contfeat"], featurePenaDenominator, pena["contfeat"], lr/inputDf[col].std(ddof=0), 0)
-  
-  print str(time.time()-startTime)+"s handling conts"
-  startTime=time.time()
-  
-  for col in model["cats"]:
-   effectOfCol = get_effect_of_this_cat_col(inputDf, model, col)
+     featurePenaDenominator += seg[1]**2
+    featurePenaDenominator = math.sqrt(featurePenaDenominator)
+    
+    model["conts"][col]["c"] = update_using_pena_incl_feature(model["conts"][col]["c"], -(sum(gpoe)*1)/len(inputDf), 0, abs(model["conts"][col]["c"]-1)*pena["contfeat"], featurePenaDenominator, pena["contfeat"], lr, 1)
+    model["conts"][col]["m"] = update_using_pena_incl_feature(model["conts"][col]["m"], -sum(gpoe*((inputDf[col]-model["conts"][col]["z"])/inputDf[col].std(ddof=0)))/len(inputDf), pena["grads"], abs(model["conts"][col]["m"])*pena["contfeat"], featurePenaDenominator, pena["contfeat"],  lr/inputDf[col].std(ddof=0), 0)
+    if "segs" in model["conts"][col]:
+     for seg in model["conts"][col]["segs"]:
+      seg[1] = update_using_pena_incl_feature(seg[1], -sum(gpoe*(abs(inputDf[col]-seg[0])/inputDf[col].std(ddof=0)))/len(inputDf), pena["segs"], abs(seg[1])*pena["contfeat"], featurePenaDenominator, pena["contfeat"], lr/inputDf[col].std(ddof=0), 0)
    
-   gpoe = grads*preds/effectOfCol
-   mult = lr/len(inputDf)
+   print str(time.time()-startTime)+"s handling conts"
+   startTime=time.time()
    
-   #We could probably do a pure-overall approach, but hybridizing just seems like the wrong move. Check overall feat effects at end; if no weirdness, don't bother solving nonproblems.
-   #specZeroValO = model["cats"][col]["OTHER"]+(1-sum(effectOfCol)/len(effectOfCol))
-   model["cats"][col]["OTHER"]=update_using_pena_incl_feature(model["cats"][col]["OTHER"], -sum((gpoe)[~inputDf[col].isin(model["cats"][col]["uniques"].keys())])/len(inputDf), pena["uniques"], abs(model["cats"][col]["OTHER"]-1)*pena["catfeat"], featurePenaDenominator, pena["catfeat"], lr,1)
-   for unique in model["cats"][col]["uniques"]:
-    model["cats"][col]["uniques"][unique] = update_using_pena_incl_feature(model["cats"][col]["uniques"][unique], -sum((gpoe)[inputDf[col]==unique])/len(inputDf), pena["uniques"], abs(model["cats"][col]["uniques"][unique]-1)*pena["catfeat"], featurePenaDenominator, pena["catfeat"], lr,1)
+   for col in model["cats"]:
+    effectOfCol = get_effect_of_this_cat_col(inputDf, model, col)
+    
+    gpoe = grads*pred/effectOfCol
+    mult = lr/len(inputDf)
+    
+    #We could probably do a pure-overall approach, but hybridizing just seems like the wrong move. Check overall feat effects at end; if no weirdness, don't bother solving nonproblems.
+    #specZeroValO = model["cats"][col]["OTHER"]+(1-sum(effectOfCol)/len(effectOfCol))
+    model["cats"][col]["OTHER"]=update_using_pena_incl_feature(model["cats"][col]["OTHER"], -sum((gpoe)[~inputDf[col].isin(model["cats"][col]["uniques"].keys())])/len(inputDf), pena["uniques"], abs(model["cats"][col]["OTHER"]-1)*pena["catfeat"], featurePenaDenominator, pena["catfeat"], lr,1)
+    for unique in model["cats"][col]["uniques"]:
+     model["cats"][col]["uniques"][unique] = update_using_pena_incl_feature(model["cats"][col]["uniques"][unique], -sum((gpoe)[inputDf[col]==unique])/len(inputDf), pena["uniques"], abs(model["cats"][col]["uniques"][unique]-1)*pena["catfeat"], featurePenaDenominator, pena["catfeat"], lr,1)
   
-  print str(time.time()-startTime)+"s handling cats"
-  startTime=time.time()
+   print str(time.time()-startTime)+"s handling cats"
+   startTime=time.time()
   #model=enforce_constraints.enforce_all_constraints(inputDf, model)
  print("FINAL MODEL!")
- explain(model)
- return model
+ for model in models:
+  explain(model)
+ return models
 
 

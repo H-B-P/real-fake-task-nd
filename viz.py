@@ -1,20 +1,7 @@
 import pandas as pd
 import numpy as np
-
-def convert_value(lowerWinsor, upperWinsor, shift, scale, x):
- if x<lowerWinsor:
-  return (lowerWinsor-shift)/scale
- if x>upperWinsor:
-  return (upperWinsor-shift)/scale
- return (x-shift)/scale
-
-def get_relativity(x, m, c):
- return m*x+c
-
-def get_cont_pdp_relativities(lW, uW, shift, scale, m, c, df, col):
- Xs=[min(df[col]), lW, uW, max(df[col])]
- Ys=[get_relativity(convert_value(lW,uW,shift,scale,x),m,c) for x in Xs]
- return Xs, Ys
+import plotly.graph_objects as go
+import plotly
 
 def get_cont_pdp_prevalences(df, col, intervals=10, weightCol=None):
  cdf= df.copy()
@@ -22,7 +9,8 @@ def get_cont_pdp_prevalences(df, col, intervals=10, weightCol=None):
  if type(intervals)==type([1,2,3]):
   intervs=intervals
  else:
-  gap=(max(df[col])-min(df[col]))/intervals
+  gap=(max(df[col])-min(df[col]))/float(intervals)
+  print(min(df[col]), max(df[col]), gap)
   intervs=list(np.arange(min(df[col]), max(df[col])+gap, gap))
  
  if weightCol==None:
@@ -42,11 +30,31 @@ def get_cont_pdp_prevalences(df, col, intervals=10, weightCol=None):
  
  return intervs, prevs
 
+def get_cat_pdp_prevalences(df, col, threshold=0.05, weightCol=None):
+ cdf= df.copy()
+ 
+ if weightCol==None:
+  cdf["weight"]=1
+ else:
+  cdf["weight"]=cdf[weightCol]
+ 
+ uniques = pd.unique(cdf[col])
+ opDict = {}
+ totalWeight = float(sum(cdf["weight"]))
+ 
+ for unique in uniques:
+  specWeight = float(sum(cdf[cdf[col]==unique]["weight"]))
+  if (specWeight/totalWeight)>=threshold:
+   opDict[unique] = specWeight
+ 
+ opDict["OTHER"] = sum(cdf[~cdf[col].isin(opDict)]["weight"])
+ 
+ return opDict
 
 def get_Xiles(df, predCol, actCol, X=10):
  cdf = df.copy()
  cdf = cdf.sort_values([predCol, actCol])
- cdf = cdf.reset_index()
+ cdf = cdf.reset_index(drop=True)
  preds = []
  acts = []
  for i in range(X):
@@ -56,3 +64,16 @@ def get_Xiles(df, predCol, actCol, X=10):
   preds.append(sum(subset[predCol])/len(subset))
   acts.append(sum(subset[actCol])/len(subset))
  return preds, acts
+
+def draw_cont_pdp(X, Y, targetSpan=0, name="graph"):
+ layout = {
+  "yaxis": {
+    "range": [min(min(Y), 1-targetSpan), max(max(Y), 1+targetSpan)]
+  }
+ }
+ 
+ fig = go.Figure(
+    data=go.Data([X,Y]), layout=layout
+)
+ 
+ plotly.offline.plot(fig, filename=name+'.html')
